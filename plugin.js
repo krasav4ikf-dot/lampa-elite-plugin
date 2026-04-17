@@ -1,84 +1,95 @@
 (function () {
 'use strict';
 
-function boot() {
-    if (!window.Lampa) {
+function boot(){
+    if(!window.Lampa){
         document.addEventListener('lampa', boot);
         return;
     }
 
-    init();
+    start();
 }
 
-// ===== SAFE PARSE =====
-function parse(text){
-    text = (text || '').toLowerCase();
+// ===== SAFE QUALITY PARSER =====
+function check(text){
+    text = (text||'').toLowerCase();
 
     return {
         remux: text.includes('remux'),
         bluray: text.includes('bluray'),
-        webdl: text.includes('web'),
+        web: text.includes('web'),
         hdr: text.includes('hdr'),
         dv: text.includes('dolby') || text.includes('dv'),
-        q4k: text.includes('4k') || text.includes('2160')
+        q4k: text.includes('4k') || text.includes('2160'),
+        bad: text.includes('cam') || text.includes('ts')
     };
 }
 
-// ===== LOCAL SORT ONLY (БЕЗ API ХУКОВ) =====
-function improveUI(){
+// ===== SCORE ENGINE =====
+function calc(text){
+    let m = check(text);
 
-    let observer = new MutationObserver(() => {
+    if(m.bad) return -999;
 
-        document.querySelectorAll('.card').forEach(card => {
+    let s = 0;
 
-            if(card.dataset.fixed) return;
-            card.dataset.fixed = 1;
+    if(m.remux) s += 120;
+    else if(m.bluray) s += 90;
+    else if(m.web) s += 60;
 
-            let t = card.innerText || '';
-            let m = parse(t);
+    if(m.q4k) s += 50;
+    if(m.hdr) s += 25;
+    if(m.dv) s += 35;
 
-            let score = 0;
+    return s;
+}
 
-            if(m.remux) score += 100;
-            else if(m.bluray) score += 70;
-            else if(m.webdl) score += 40;
+// ===== DOM IMPROVER (NO API = NO CRASH) =====
+function enhanceUI(){
 
-            if(m.q4k) score += 50;
-            if(m.hdr) score += 20;
-            if(m.dv) score += 30;
+    const obs = new MutationObserver(()=>{
+
+        document.querySelectorAll('.card').forEach(card=>{
+
+            if(card.dataset.safe) return;
+            card.dataset.safe = 1;
+
+            let text = card.innerText || '';
+            let score = calc(text);
 
             if(score > 120){
-                card.style.boxShadow = '0 0 15px rgba(0,255,150,0.5)';
+                card.style.boxShadow = '0 0 15px rgba(0,255,180,0.5)';
             }
 
-            if(m.q4k){
-                let b = document.createElement('div');
-                b.innerText = '4K';
-                b.style = `
+            if(text.toLowerCase().includes('4k')){
+                let badge = document.createElement('div');
+                badge.innerText = '4K';
+                badge.style = `
                     position:absolute;
-                    top:5px;
-                    left:5px;
-                    background:black;
-                    color:white;
+                    top:6px;
+                    left:6px;
+                    background:#000;
+                    color:#fff;
                     font-size:10px;
                     padding:3px 6px;
                     border-radius:6px;
+                    z-index:10;
                 `;
-                card.appendChild(b);
+                card.appendChild(badge);
             }
 
         });
 
     });
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
+    obs.observe(document.body,{
+        childList:true,
+        subtree:true
     });
 }
 
-// ===== SIMPLE MENU =====
-function menu(){
+// ===== SIMPLE BUTTON =====
+function ui(){
 
     let btn = document.createElement('div');
 
@@ -89,26 +100,26 @@ function menu(){
         right:20px;
         background:#000;
         color:#fff;
-        padding:10px 15px;
+        padding:10px 14px;
         border-radius:10px;
         z-index:99999;
         cursor:pointer;
         font-family:sans-serif;
     `;
 
-    btn.onclick = () => {
-        alert('Фильтр активен: REMUX / 4K / HDR приоритет');
+    btn.onclick = ()=>{
+        alert('Фильтр активен: 4K / HDR / REMUX приоритет');
     };
 
     document.body.appendChild(btn);
 }
 
 // ===== START =====
-function init(){
-    improveUI();
-    menu();
+function start(){
+    enhanceUI();
+    ui();
 
-    console.log('Lampa 3.1.8 SAFE FILTER ACTIVE');
+    console.log('Lampa 3.1.8 SAFE PLUGIN RUNNING');
 }
 
 boot();
