@@ -8,9 +8,9 @@ function boot() {
     }
 
     try {
-        start();
+        init();
     } catch (e) {
-        console.log('PLUGIN ERROR:', e);
+        console.log('ZERO ERROR PLUGIN SAFE FAIL:', e);
     }
 }
 
@@ -19,7 +19,7 @@ let STATE = {
     ultra: false
 };
 
-// ===== PARSER =====
+// ===== SAFE PARSER =====
 function parse(t) {
     t = (t || '').toLowerCase();
 
@@ -31,46 +31,55 @@ function parse(t) {
         dv: t.includes('dolby') || t.includes('dv'),
         q4k: t.includes('4k') || t.includes('2160'),
         q1080: t.includes('1080'),
-        cam: t.includes('cam') || t.includes('ts')
+        bad: t.includes('cam') || t.includes('ts')
     };
 }
 
-// ===== SCORE =====
+// ===== SAFE SCORE =====
 function score(item) {
-    let t = (item.title || '') + ' ' + (item.quality || '');
-    let m = parse(t);
+    try {
+        let t = (item.title || '') + ' ' + (item.quality || '');
+        let m = parse(t);
 
-    if (m.cam) return -999;
+        if (m.bad) return -999;
 
-    let s = 0;
+        let s = 0;
 
-    if (m.remux) s += 120;
-    else if (m.bluray) s += 90;
-    else if (m.webdl) s += 60;
+        if (m.remux) s += 100;
+        else if (m.bluray) s += 80;
+        else if (m.webdl) s += 60;
 
-    if (m.q4k) s += 60;
-    else if (m.q1080) s += 30;
+        if (m.q4k) s += 50;
+        else if (m.q1080) s += 30;
 
-    if (m.hdr) s += 30;
-    if (m.dv) s += 40;
+        if (m.hdr) s += 20;
+        if (m.dv) s += 30;
 
-    return s;
+        return s;
+    } catch (e) {
+        return 0;
+    }
 }
 
-// ===== SAFE FILTER (НЕ ЛОМАЕТ API) =====
-function filterItems(items) {
+// ===== SAFE FILTER =====
+function filter(items) {
     if (!Array.isArray(items)) return items;
 
-    let arr = items
-        .map(i => ({ ...i, _score: score(i) }))
-        .filter(i => i._score > -900);
+    let arr = items.map(i => {
+        return {
+            ...i,
+            _score: score(i)
+        };
+    });
+
+    arr = arr.filter(i => i._score > -900);
 
     arr.sort((a, b) => b._score - a._score);
 
-    if (STATE.ultra) {
+    if (STATE.ultra && arr.length) {
         arr = arr.filter(i => {
-            let m = parse((i.title || '') + (i.quality || ''));
-            return m.q4k && (m.hdr || m.dv);
+            let t = (i.title || '').toLowerCase();
+            return t.includes('4k') && (t.includes('hdr') || t.includes('dolby'));
         });
     }
 
@@ -81,8 +90,8 @@ function filterItems(items) {
     return arr;
 }
 
-// ===== UI =====
-function openPanel() {
+// ===== UI SAFE =====
+function openUI() {
     let el = document.createElement('div');
 
     el.style = `
@@ -90,18 +99,17 @@ function openPanel() {
         top:10%;
         left:50%;
         transform:translateX(-50%);
-        width:520px;
+        width:500px;
         background:rgba(0,0,0,0.95);
-        backdrop-filter:blur(20px);
-        border-radius:20px;
-        padding:20px;
-        z-index:99999;
         color:#fff;
+        padding:20px;
+        border-radius:18px;
+        z-index:99999;
         font-family:sans-serif;
     `;
 
     el.innerHTML = `
-        <h2>⚙️ LAMPA FIX FILTER</h2>
+        <h3>🛡 ZERO ERROR FILTER</h3>
 
         <button id="best">🔥 BEST ONLY</button>
         <button id="ultra">💎 ULTRA 4K HDR</button>
@@ -113,20 +121,20 @@ function openPanel() {
     el.querySelector('#best').onclick = () => {
         STATE.bestOnly = true;
         el.remove();
-        reload();
+        safeReload();
     };
 
     el.querySelector('#ultra').onclick = () => {
         STATE.ultra = true;
         el.remove();
-        reload();
+        safeReload();
     };
 
     el.querySelector('#close').onclick = () => el.remove();
 }
 
 // ===== SAFE RELOAD =====
-function reload() {
+function safeReload() {
     try {
         if (Lampa.Activity && Lampa.Activity.reload) {
             Lampa.Activity.reload();
@@ -136,62 +144,63 @@ function reload() {
 
 // ===== SAFE HOOK (НЕ ЛОМАЕТ LAMPA) =====
 function hook() {
-    if (!Lampa.Api || !Lampa.Api.sources) return;
+    try {
+        if (!Lampa.Api || !Lampa.Api.sources) return;
 
-    const original = Lampa.Api.sources;
+        const orig = Lampa.Api.sources;
 
-    Lampa.Api.sources = function (params, success, error) {
-        return original(params, function (data) {
-            try {
-                if (data && data.results) {
-                    data.results = filterItems(data.results);
-                }
-            } catch (e) {
-                console.log('filter error:', e);
-            }
+        Lampa.Api.sources = function (params, success, error) {
+            return orig(params, function (data) {
+                try {
+                    if (data && data.results) {
+                        data.results = filter(data.results);
+                    }
+                } catch (e) {}
 
-            success(data);
-        }, error);
-    };
+                success(data);
+            }, error);
+        };
+    } catch (e) {}
 }
 
-// ===== BADGES (БЕЗ КРАША) =====
+// ===== BADGES SAFE =====
 function badges() {
-    Lampa.Listener.follow('full', e => {
-        if (e.type !== 'complite') return;
+    try {
+        Lampa.Listener.follow('full', e => {
+            if (e.type !== 'complite') return;
 
-        document.querySelectorAll('.card').forEach(c => {
-            let t = c.innerText.toLowerCase();
+            document.querySelectorAll('.card').forEach(c => {
+                if (!c.dataset.safe) {
+                    c.dataset.safe = 1;
+                    let t = c.innerText.toLowerCase();
 
-            if (!c.dataset.fix) {
-                c.dataset.fix = 1;
-
-                if (t.includes('4k')) {
-                    c.style.boxShadow = '0 0 15px rgba(0,255,150,0.6)';
+                    if (t.includes('4k')) {
+                        c.style.boxShadow = '0 0 10px rgba(0,255,150,0.4)';
+                    }
                 }
-            }
+            });
         });
-    });
+    } catch (e) {}
 }
 
 // ===== START =====
-function start() {
+function init() {
     hook();
     badges();
 
-    Lampa.Listener.follow('app', e => {
-        if (e.type === 'ready') {
-            try {
+    try {
+        Lampa.Listener.follow('app', e => {
+            if (e.type === 'ready') {
                 Lampa.Controller.collectionSet('menu', [{
-                    title: '⚙️ FIX FILTER',
+                    title: '🛡 FILTER SAFE',
                     icon: 'filter_list',
-                    onClick: openPanel
+                    onClick: openUI
                 }]);
-            } catch (e) {}
-        }
-    });
+            }
+        });
+    } catch (e) {}
 
-    console.log('FIX FILTER LOADED');
+    console.log('🛡 ZERO ERROR LOADED');
 }
 
 boot();
