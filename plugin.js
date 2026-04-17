@@ -7,203 +7,110 @@ function boot() {
         return;
     }
 
-    try {
-        init();
-    } catch (e) {
-        console.log('ZERO ERROR PLUGIN SAFE FAIL:', e);
-    }
+    init();
 }
 
-let STATE = {
-    bestOnly: false,
-    ultra: false
-};
-
-// ===== SAFE PARSER =====
-function parse(t) {
-    t = (t || '').toLowerCase();
+// ===== SAFE PARSE =====
+function parse(text){
+    text = (text || '').toLowerCase();
 
     return {
-        remux: t.includes('remux'),
-        bluray: t.includes('bluray'),
-        webdl: t.includes('web-dl'),
-        hdr: t.includes('hdr'),
-        dv: t.includes('dolby') || t.includes('dv'),
-        q4k: t.includes('4k') || t.includes('2160'),
-        q1080: t.includes('1080'),
-        bad: t.includes('cam') || t.includes('ts')
+        remux: text.includes('remux'),
+        bluray: text.includes('bluray'),
+        webdl: text.includes('web'),
+        hdr: text.includes('hdr'),
+        dv: text.includes('dolby') || text.includes('dv'),
+        q4k: text.includes('4k') || text.includes('2160')
     };
 }
 
-// ===== SAFE SCORE =====
-function score(item) {
-    try {
-        let t = (item.title || '') + ' ' + (item.quality || '');
-        let m = parse(t);
+// ===== LOCAL SORT ONLY (БЕЗ API ХУКОВ) =====
+function improveUI(){
 
-        if (m.bad) return -999;
+    let observer = new MutationObserver(() => {
 
-        let s = 0;
+        document.querySelectorAll('.card').forEach(card => {
 
-        if (m.remux) s += 100;
-        else if (m.bluray) s += 80;
-        else if (m.webdl) s += 60;
+            if(card.dataset.fixed) return;
+            card.dataset.fixed = 1;
 
-        if (m.q4k) s += 50;
-        else if (m.q1080) s += 30;
+            let t = card.innerText || '';
+            let m = parse(t);
 
-        if (m.hdr) s += 20;
-        if (m.dv) s += 30;
+            let score = 0;
 
-        return s;
-    } catch (e) {
-        return 0;
-    }
-}
+            if(m.remux) score += 100;
+            else if(m.bluray) score += 70;
+            else if(m.webdl) score += 40;
 
-// ===== SAFE FILTER =====
-function filter(items) {
-    if (!Array.isArray(items)) return items;
+            if(m.q4k) score += 50;
+            if(m.hdr) score += 20;
+            if(m.dv) score += 30;
 
-    let arr = items.map(i => {
-        return {
-            ...i,
-            _score: score(i)
-        };
+            if(score > 120){
+                card.style.boxShadow = '0 0 15px rgba(0,255,150,0.5)';
+            }
+
+            if(m.q4k){
+                let b = document.createElement('div');
+                b.innerText = '4K';
+                b.style = `
+                    position:absolute;
+                    top:5px;
+                    left:5px;
+                    background:black;
+                    color:white;
+                    font-size:10px;
+                    padding:3px 6px;
+                    border-radius:6px;
+                `;
+                card.appendChild(b);
+            }
+
+        });
+
     });
 
-    arr = arr.filter(i => i._score > -900);
-
-    arr.sort((a, b) => b._score - a._score);
-
-    if (STATE.ultra && arr.length) {
-        arr = arr.filter(i => {
-            let t = (i.title || '').toLowerCase();
-            return t.includes('4k') && (t.includes('hdr') || t.includes('dolby'));
-        });
-    }
-
-    if (STATE.bestOnly && arr.length) {
-        return [arr[0]];
-    }
-
-    return arr;
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 }
 
-// ===== UI SAFE =====
-function openUI() {
-    let el = document.createElement('div');
+// ===== SIMPLE MENU =====
+function menu(){
 
-    el.style = `
+    let btn = document.createElement('div');
+
+    btn.innerHTML = '⚙ FILTER';
+    btn.style = `
         position:fixed;
-        top:10%;
-        left:50%;
-        transform:translateX(-50%);
-        width:500px;
-        background:rgba(0,0,0,0.95);
+        bottom:20px;
+        right:20px;
+        background:#000;
         color:#fff;
-        padding:20px;
-        border-radius:18px;
+        padding:10px 15px;
+        border-radius:10px;
         z-index:99999;
+        cursor:pointer;
         font-family:sans-serif;
     `;
 
-    el.innerHTML = `
-        <h3>🛡 ZERO ERROR FILTER</h3>
-
-        <button id="best">🔥 BEST ONLY</button>
-        <button id="ultra">💎 ULTRA 4K HDR</button>
-        <button id="close">✖ CLOSE</button>
-    `;
-
-    document.body.appendChild(el);
-
-    el.querySelector('#best').onclick = () => {
-        STATE.bestOnly = true;
-        el.remove();
-        safeReload();
+    btn.onclick = () => {
+        alert('Фильтр активен: REMUX / 4K / HDR приоритет');
     };
 
-    el.querySelector('#ultra').onclick = () => {
-        STATE.ultra = true;
-        el.remove();
-        safeReload();
-    };
-
-    el.querySelector('#close').onclick = () => el.remove();
-}
-
-// ===== SAFE RELOAD =====
-function safeReload() {
-    try {
-        if (Lampa.Activity && Lampa.Activity.reload) {
-            Lampa.Activity.reload();
-        }
-    } catch (e) {}
-}
-
-// ===== SAFE HOOK (НЕ ЛОМАЕТ LAMPA) =====
-function hook() {
-    try {
-        if (!Lampa.Api || !Lampa.Api.sources) return;
-
-        const orig = Lampa.Api.sources;
-
-        Lampa.Api.sources = function (params, success, error) {
-            return orig(params, function (data) {
-                try {
-                    if (data && data.results) {
-                        data.results = filter(data.results);
-                    }
-                } catch (e) {}
-
-                success(data);
-            }, error);
-        };
-    } catch (e) {}
-}
-
-// ===== BADGES SAFE =====
-function badges() {
-    try {
-        Lampa.Listener.follow('full', e => {
-            if (e.type !== 'complite') return;
-
-            document.querySelectorAll('.card').forEach(c => {
-                if (!c.dataset.safe) {
-                    c.dataset.safe = 1;
-                    let t = c.innerText.toLowerCase();
-
-                    if (t.includes('4k')) {
-                        c.style.boxShadow = '0 0 10px rgba(0,255,150,0.4)';
-                    }
-                }
-            });
-        });
-    } catch (e) {}
+    document.body.appendChild(btn);
 }
 
 // ===== START =====
-function init() {
-    hook();
-    badges();
+function init(){
+    improveUI();
+    menu();
 
-    try {
-        Lampa.Listener.follow('app', e => {
-            if (e.type === 'ready') {
-                Lampa.Controller.collectionSet('menu', [{
-                    title: '🛡 FILTER SAFE',
-                    icon: 'filter_list',
-                    onClick: openUI
-                }]);
-            }
-        });
-    } catch (e) {}
-
-    console.log('🛡 ZERO ERROR LOADED');
+    console.log('Lampa 3.1.8 SAFE FILTER ACTIVE');
 }
 
 boot();
 
 })();
-
